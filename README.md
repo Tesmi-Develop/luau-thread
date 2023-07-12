@@ -1,74 +1,43 @@
-# luau-thread
-Parallel Luau library designed to make parallel luau easier to use (cause the default parallel luau api is shit)
+# Thread
 
-### spawn()
+Fork of [luau-thread](https://github.com/decimalcubed/luau-thread) for Roblox-ts
 
-Requires and runs the given module on a separate CPU thread, passing any given
-arguments. Returns the id of the spawned thread.
+The module first must export a function:
+```ts
+// src/shared/module
+export = function(timeToWait: number) {
+	task.wait(timeToWait);
+	print("waited", timeToWait, "second(s)");
+}
+```
 
-  - **Type**
+To first get our module, we can use the new $getModuleTree macro, and the function provided in this library
+```ts
+import Thread from "@rbxts/luau-thread";
 
-    ```lua
-    function thread.spawn(execute_module: ModuleScript, ...): number
-    ```
-  
-  - **Usage**
+const [root, parts] = $getModuleTree("shared/module");
+const module = Thread.getModuleByTree(root, parts);
+```
 
-    ```lua
-    local sharedTable = SharedTable.new() --Not necessary, but must be used to return any data.
-    local runningThreads = {}
-    for i = 1, 16 do
-    
-      table.insert(runningThreads, thread.spawn(execute_module, sharedTable, i) --Extra arguments can be passed through like a function
-    end
-    ```
----
+Then, we can spawn it, and wait for it to finish:
+```ts
+const identifier = Thread.spawn(module, 1);
+Thread.join(identifier);
 
-### join()
+// prints: waited 1 second(s)
+```
 
-Yields the calling coroutine until the given thread(s) has finished executing (if it isn't allready finished).
+We can also spawn it multiple times, and wait for all threads to finish:
+```ts
+const identifiers = [];
 
-  - **Type**
+for (const i of $range(1, 10)) {
+	identifiers.push(Thread.spawn(module, i));
+}
 
-    ```lua
-    function thread.join(thread_id: number | { number })
-    ```
-  
-  - **Usage**
+Thread.join(identifiers);
 
-    ```lua
-    --Waits for all running threads to finish
-    for _, v in runningThreads do
-    
-      thread.join(v)
-    end
-    ```
-    ```lua
-    --Sugar syntax for the previous code block
-    thread.join(runningThreads)
-    ```
----
-
-### modules
-
-The library takes in modules in place of functions since functions cannot be cross-loaded between Luau VMs, meaning modules must be used in place of functions.
-
-  - **Type**
-  
-    When passing a module through the module must only return a function as such:
-    ```lua
-    return function(...)
-    end
-    ```
----
-
-### SharedTables
-
-If you want to return any data from running parallel code you must use SharedTables;
-as regular tables cannot be used to return data, and using regular returns is impossible with the new api.
-
-  - **Type**
-    ```lua
-    local sharedTable = SharedTable.new()
-    local t = thread.spawn(execute_module, sharedTable)
-    ```
+// prints: waited 1 second(s)
+// ...
+// prints: waited 10 seconds(s)
+```

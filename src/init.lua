@@ -93,6 +93,16 @@ function thread.join(threadSpecifier: number | Array<number>)
 	end
 end
 
+function thread.getModuleByTree(root: Instance, parts: Array<string>)
+	local current = root;
+
+	for _, nextPart in parts do
+		current = current:WaitForChild(nextPart);
+	end
+
+	return current :: ModuleScript;
+end
+
 -- Connect to the thread finished signal to respawn the watchers connected in thread.join
 threadFinishedSignal.Event:Connect(function(threadId: number, actor: Actor)
 	-- Resume all watchers and cleanup
