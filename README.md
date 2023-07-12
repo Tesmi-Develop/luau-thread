@@ -2,7 +2,7 @@
 
 Fork of [luau-thread](https://github.com/decimalcubed/luau-thread) for Roblox-ts
 
-The module first must export a function:
+The module must first export a function:
 ```ts
 // src/shared/module
 export = function(timeToWait: number) {
@@ -11,7 +11,7 @@ export = function(timeToWait: number) {
 }
 ```
 
-To first get our module, we can use the new $getModuleTree macro, and the function provided in this library
+Then, to get our module, we can use the new $getModuleTree macro, and the function provided in this library
 ```ts
 import Thread from "@rbxts/luau-thread";
 
@@ -19,7 +19,7 @@ const [root, parts] = $getModuleTree("shared/module");
 const module = Thread.getModuleByTree(root, parts);
 ```
 
-Then, we can spawn it, and wait for it to finish:
+Afterwards, we can spawn the module and wait for it to finish:
 ```ts
 const identifier = Thread.spawn(module, 1);
 Thread.join(identifier);
