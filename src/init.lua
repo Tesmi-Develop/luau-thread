@@ -1,114 +1,110 @@
 --!strict
 
-local thread = {}
-local runContextIsClient = game:GetService("RunService"):IsClient()
-local processorToUse = if runContextIsClient then script.Processor_Client else script.Processor_Server
-local processorParent = if runContextIsClient then game:GetService("Players").LocalPlayer.PlayerScripts else game:GetService("ServerScriptService")
+type Array<T> = {T}
+type Map<K, V> = { [K]: V }
 
---- << Make instances
-
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
---Get thread finished signal (Or create it if it allready exists, which could be the case if it was placed there in the editor or if the server made it)
-local threadFinishedSignal = ReplicatedStorage:FindFirstChild("ThreadFinished") :: BindableEvent?
+local THREAD_FINISH_BINDABLE_NAME = "threadFinished"
+local THREAD_ACTOR_NAME = "threadActor"
+local THREAD_RUN_MESSAGE = "runThread"
+
+local runContextIsClient = RunService:IsClient();
+
+-- Although processorToUse is of type LocalScript | Script, type Script allows the typechecker to work
+local processorToUse = (if runContextIsClient then script:FindFirstChild("clientProcessor") else script:FindFirstChild("serverProcessor")) :: Script
+local processorParent = if runContextIsClient then Players.LocalPlayer:WaitForChild("PlayerScripts") else ServerScriptService
+
+local thread = {}
+
+local spawnedThreadId = 0
+local threadWatchers: Map<number, Array<thread>> = {}
+
+local actorCache: Array<Actor> = {}
+
+-- Get thread finished signal (or create it if it already exists, which could be the case if it was placed there in the editor or if the server made it)
+local threadFinishedSignal = ReplicatedStorage:FindFirstChild(THREAD_FINISH_BINDABLE_NAME) :: BindableEvent?
+
 if not threadFinishedSignal then
-	
 	threadFinishedSignal = Instance.new("BindableEvent")
-	assert(threadFinishedSignal) --Typechecker wack
-	
-	threadFinishedSignal.Name = "ThreadFinished"
+	assert(threadFinishedSignal)
+
+	threadFinishedSignal.Name = THREAD_FINISH_BINDABLE_NAME
 	threadFinishedSignal.Parent = ReplicatedStorage
 end
+
+-- Ensures the typechecker recognises the signal exists
 assert(threadFinishedSignal)
 
---- << thread tracking
-
-local highestThreadId = 0
-local activeThreads: {{thread}} = {}
-
---- << Actor tracking
-
-local actorCache: {Actor} = {}
-
---- << Private functions
-local function BuildActor(): Actor
-	
-	--Build processor and actor
+local function buildActor(): Actor
 	local actor = Instance.new("Actor")
-	actor.Name = "ThreadActor"
+	actor.Name = THREAD_ACTOR_NAME
 	actor.Parent = processorParent
-	
+
 	local processor = processorToUse:Clone()
 	processor.Parent = actor
-	
-	--Enable processor
+
 	processor.Enabled = true
 	
 	return actor
 end
 
---- << Public variables
+function thread.spawn(executeModule: ModuleScript, ...): number
+	spawnedThreadId += 1
 
-function thread.spawn(execute_module: ModuleScript, ...): number
-	
-	highestThreadId += 1
+	-- Get the last available actor or a new one
+	local actor = table.remove(actorCache) or buildActor()
 
-	--Get the last available actor or a new one
-	local actor = table.remove(actorCache) or BuildActor()
-
-	--Mark the current ID as active and start the thread
-	activeThreads[highestThreadId] = {};
+	-- Mark the current id as active and start the thread
+	threadWatchers[spawnedThreadId] = {};
+	actor:SendMessage(THREAD_RUN_MESSAGE, spawnedThreadId, executeModule, ...)
 	
-	actor:SendMessage("RunThread", highestThreadId, execute_module, ...)
-	
-	return highestThreadId
+	return spawnedThreadId
 end
 
-function thread.join(thread_id: number | { number })
+function thread.join(threadSpecifier: number | Array<number>)
+	if type(threadSpecifier) == "table" then
+		for _, threadId in threadSpecifier do
+			-- Continue if the given thread has already finished
+			local watcherArray = threadWatchers[threadId]
 
-	if type(thread_id) == "table" then
-
-		for _, thread_id in thread_id do
-
-			--Return instantly if the given thread has allready finished
-			local active_thread = activeThreads[thread_id]
-			if not active_thread then
-
-				return
+			if not watcherArray then
+				continue
 			end
 
-			--Stop current thread and add to active coroutine tracker
-			table.insert(active_thread, coroutine.running())
+			-- Stop current thread and add to watcher list
+			table.insert(watcherArray, coroutine.running())
 			coroutine.yield()
 		end
 	else
+		-- Return instantly if the given thread has already finished
+		local watcherArray = threadWatchers[threadSpecifier]
 
-		--Return instantly if the given thread has allready finished
-		local active_thread = activeThreads[thread_id]
-		if not active_thread then
-
+		if not watcherArray then
 			return
 		end
 
-		--Stop current thread and add to active coroutine tracker
-		table.insert(active_thread, coroutine.running())
+		-- Stop current thread and add to watcher list
+		table.insert(watcherArray, coroutine.running())
 		coroutine.yield()
 	end
 end
 
---Connect to the thread finished signal to respawn join coroutines
-threadFinishedSignal.Event:Connect(function(id: number, actor: Actor)
+-- Connect to the thread finished signal to respawn the watchers connected in thread.join
+threadFinishedSignal.Event:Connect(function(threadId: number, actor: Actor)
+	-- Resume all watchers and cleanup
+	local watcherArray = threadWatchers[threadId]
 
-	local active_thread = activeThreads[id]
-	for _, v in active_thread do
-
-		task.spawn(v)
+	for _, watcher in watcherArray do
+		coroutine.resume(watcher);
 	end
 
-	--Disconnect and clean up
-	activeThreads[id] = nil
+	threadWatchers[threadId] = nil
 
-	--Add the actor back to the actor cache
+	-- Add the actor back to the actor cache
 	table.insert(actorCache, actor)
 end)
 
