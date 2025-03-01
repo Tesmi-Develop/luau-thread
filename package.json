@@ -1,5 +1,5 @@
 {
-  "name": "@rbxts/luau-thread",
+  "name": "@rbxts/luau-thread-fixed",
   "version": "1.0.0",
   "description": "",
   "main": "src/init.lua",

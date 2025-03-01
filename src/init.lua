@@ -53,16 +53,20 @@ local function buildActor(): Actor
 end
 
 function thread.spawn(executeModule: ModuleScript, ...): number
+	local args = {...}
+	local id = spawnedThreadId
 	spawnedThreadId += 1
 
 	-- Get the last available actor or a new one
 	local actor = table.remove(actorCache) or buildActor()
 
 	-- Mark the current id as active and start the thread
-	threadWatchers[spawnedThreadId] = {};
-	actor:SendMessage(THREAD_RUN_MESSAGE, spawnedThreadId, executeModule, ...)
+	threadWatchers[id] = {};
+	task.defer(function()
+		actor:SendMessage(THREAD_RUN_MESSAGE, id, executeModule, table.unpack(args))
+	end)
 	
-	return spawnedThreadId
+	return id
 end
 
 function thread.join(threadSpecifier: number | Array<number>)
